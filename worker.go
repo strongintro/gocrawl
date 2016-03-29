@@ -2,19 +2,18 @@ package gocrawl
 
 import (
 	"bytes"
+	"golang.org/x/net/html"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"time"
 
-	"path"
-
 	"github.com/PuerkitoBio/goquery"
-	robotstxt "github.com/temoto/robotstxt.go"
-	"golang.org/x/net/html"
+	robotstxt "github.com/temoto/robotstxt-go"
 )
 
 // The worker is dedicated to fetching and visiting a given host, respecting
@@ -28,8 +27,9 @@ type worker struct {
 	push    chan<- *workerResponse
 	pop     popChannel
 	stop    chan struct{}
-	enqueue chan<- interface{}
 	wg      *sync.WaitGroup
+	enqueue chan<- enqResponse
+	// enqueue chan<- interface{}
 
 	// Robots validation
 	robotsGroup *robotstxt.Group
@@ -73,7 +73,9 @@ func (w *worker) run() {
 			return
 
 		case batch := <-w.pop:
-
+			for _, ctx := range batch {
+				w.logFunc(LogInfo, "GOING TO TRY IN THIS ORDER: %s", ctx.url)
+			}
 			// Got a batch of urls to crawl, loop and check at each iteration if a stop
 			// is received.
 			for _, ctx := range batch {
@@ -82,8 +84,10 @@ func (w *worker) run() {
 				if ctx.IsRobotsURL() {
 					w.requestRobotsTxt(ctx)
 				} else if w.isAllowedPerRobotsPolicies(ctx.url) {
+					w.logFunc(LogInfo, "requesting %s", ctx.NormalizedURL().String())
 					w.requestURL(ctx, ctx.HeadBeforeGet)
 				} else {
+					w.logFunc(LogInfo, "disallowed %s", ctx.NormalizedURL().String())
 					// Must still notify Crawler that this URL was processed, although not visited
 					w.opts.Extender.Disallowed(ctx)
 					w.sendResponse(ctx, false, nil, false)
@@ -120,6 +124,7 @@ func (w *worker) isAllowedPerRobotsPolicies(u *url.URL) bool {
 
 // Process the specified URL.
 func (w *worker) requestURL(ctx *URLContext, headRequest bool) {
+	w.logFunc(LogTrace, "Requesting %v", ctx.URL().String())
 	if res, ok := w.fetchURL(ctx, w.opts.UserAgent, headRequest); ok {
 		var harvested interface{}
 		var visited bool
@@ -204,6 +209,7 @@ func (w *worker) setCrawlDelay() {
 
 // Request the specified URL and return the response.
 func (w *worker) fetchURL(ctx *URLContext, agent string, headRequest bool) (res *http.Response, ok bool) {
+	w.logFunc(LogTrace, "Fetching %s with a depth of %s", ctx.NormalizedURL().String(), ctx.Depth)
 	var e error
 	var silent bool
 
@@ -240,8 +246,16 @@ func (w *worker) fetchURL(ctx *URLContext, agent string, headRequest bool) (res 
 						w.logFunc(LogError, "ERROR parsing redirect URL %s: %s", ue.URL, e)
 					} else {
 						// Enqueue the redirect-to URL
-						w.logFunc(LogTrace, "redirect to %s", ur)
-						w.enqueue <- ur
+						w.logFunc(LogTrace, "%s led to a redirect to %s", ctx.NormalizedURL().String(), ur)
+						resp := enqResponse{
+							ur,
+							// Since this is a redirect, this shouldn't
+							// count as going "deeper"
+							// Since IDK how this lib works, instead of not adding on the
+							// "enq" side, just decr here because this is right for sure
+							ctx.Depth - 1,
+						}
+						w.enqueue <- resp
 					}
 				}
 			}
@@ -335,6 +349,7 @@ func (w *worker) visitURL(ctx *URLContext, res *http.Response) interface{} {
 			w.opts.Extender.Error(newCrawlError(ctx, e, CekParseBody))
 			w.logFunc(LogError, "ERROR parsing %s: %s", ctx.url, e)
 		} else {
+			// w.logFunc(LogInfo, "BODY IS: %v", string(bd))
 			doc = goquery.NewDocumentFromNode(node)
 			doc.Url = res.Request.URL
 		}
@@ -346,6 +361,7 @@ func (w *worker) visitURL(ctx *URLContext, res *http.Response) interface{} {
 	if harvested, doLinks = w.opts.Extender.Visit(ctx, res, doc); doLinks {
 		// Links were not processed by the visitor, so process links
 		if doc != nil {
+			w.logFunc(LogInfo, "Going to show harvested links from %v", ctx.URL().String())
 			harvested = w.processLinks(doc)
 		} else {
 			w.opts.Extender.Error(newCrawlErrorMessage(ctx, "No goquery document to process links.", CekProcessLinks))
@@ -383,13 +399,14 @@ func (w *worker) processLinks(doc *goquery.Document) (result []*url.URL) {
 		return val
 	})
 	for _, s := range urls {
+		w.logFunc(LogInfo, "MAYBE HARVESTED URL IS: %v", s)
 		// If href starts with "#", then it points to this same exact URL, ignore (will fail to parse anyway)
 		if len(s) > 0 && !strings.HasPrefix(s, "#") {
 			if parsed, e := url.Parse(s); e == nil {
 				parsed = doc.Url.ResolveReference(parsed)
 				result = append(result, parsed)
 			} else {
-				w.logFunc(LogIgnored, "ignore on unparsable policy %s: %s", s, e.Error())
+				w.logFunc(LogInfo, "ignore on unparsable policy %s: %s", s, e.Error())
 			}
 		}
 	}

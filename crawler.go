@@ -16,6 +16,11 @@ type workerResponse struct {
 	idleDeath     bool
 }
 
+type enqResponse struct {
+	enq   interface{}
+	depth int
+}
+
 // Crawler is the web crawler that processes URLs and manages the workers.
 type Crawler struct {
 	// Options configures the Crawler, refer to the Options type for documentation.
@@ -24,7 +29,7 @@ type Crawler struct {
 	// Internal fields
 	logFunc         func(LogFlags, string, ...interface{})
 	push            chan *workerResponse
-	enqueue         chan interface{}
+	enqueue         chan enqResponse
 	stop            chan struct{}
 	wg              *sync.WaitGroup
 	pushPopRefCount int
@@ -63,7 +68,7 @@ func (c *Crawler) Run(seeds interface{}) error {
 	c.logFunc = getLogFunc(c.Options.Extender, c.Options.LogFlags, -1)
 
 	seeds = c.Options.Extender.Start(seeds)
-	ctxs := c.toURLContexts(seeds, nil)
+	ctxs := c.toURLContexts(seeds, nil, 0)
 	c.init(ctxs)
 
 	// Start with the seeds, and loop till death
@@ -109,7 +114,7 @@ func (c *Crawler) init(ctxs []*URLContext) {
 			make(chan *workerResponse, c.Options.HostBufferFactor*hostCount)
 	}
 	// Create and pass the enqueue channel
-	c.enqueue = make(chan interface{}, c.Options.EnqueueChanBuffer)
+	c.enqueue = make(chan enqResponse, c.Options.EnqueueChanBuffer)
 	c.setExtenderEnqueueChan()
 }
 
@@ -226,7 +231,7 @@ func (c *Crawler) enqueueUrls(ctxs []*URLContext) (cnt int) {
 
 		} else if c.Options.SameHostOnly && !c.isSameHost(ctx) {
 			// Only allow URLs coming from the same host
-			c.logFunc(LogIgnored, "ignore on same host policy: %s", ctx.normalizedURL)
+			// c.logFunc(LogIgnored, "ignore on same host policy: %s", ctx.normalizedURL)
 
 		} else {
 			// All is good, visit this URL (robots.txt verification is done by worker)
@@ -257,6 +262,8 @@ func (c *Crawler) enqueueUrls(ctxs []*URLContext) (cnt int) {
 			cnt++
 			c.logFunc(LogEnqueued, "enqueue: %s", ctx.url)
 			c.Options.Extender.Enqueued(ctx)
+			// This is effectively w.pop <- ctx but w/ an infinitely buffered chan
+			// so it looks weird
 			w.pop.stack(ctx)
 			c.pushPopRefCount++
 
@@ -291,19 +298,23 @@ func (c *Crawler) collectUrls() error {
 		// Check if refcount is zero - MUST be before the select statement, so that if
 		// no valid seeds are enqueued, the crawler stops.
 		if c.pushPopRefCount == 0 && len(c.enqueue) == 0 {
-			c.logFunc(LogInfo, "sending STOP signals...")
+			c.logFunc(LogInfo, "sending STOP signals because we're out of stuff...")
 			close(c.stop)
 			return nil
 		}
 
 		select {
 		case res := <-c.push:
+			// ctxs := c.toURLContexts(res.harvestedURLs, res.ctx.url, res.ctx.Depth+1)
+			// for _, ctx := range ctxs {
+			// 	c.logFunc(LogTrace, "Harvested: %v", ctx.URL().String())
+			// }
 			// Received a response, check if it contains URLs to enqueue
 			if res.visited {
 				c.visits++
 				if c.Options.MaxVisits > 0 && c.visits >= c.Options.MaxVisits {
 					// Limit reached, request workers to stop
-					c.logFunc(LogInfo, "sending STOP signals...")
+					c.logFunc(LogInfo, "sending STOP signals because MaxVisits...")
 					close(c.stop)
 					return ErrMaxVisits
 				}
@@ -313,15 +324,26 @@ func (c *Crawler) collectUrls() error {
 				delete(c.workers, res.host)
 				c.logFunc(LogInfo, "worker for host %s cleared on idle policy", res.host)
 			} else {
-				c.enqueueUrls(c.toURLContexts(res.harvestedURLs, res.ctx.url))
-				c.pushPopRefCount--
+				// Only enq new URLs if they are not at too large of a depth.
+				// Don't stop on depth, just dont Q up more shit
+				if c.Options.MaxDepth > 0 && res.ctx.Depth+1 <= c.Options.MaxDepth {
+					ctxs := c.toURLContexts(res.harvestedURLs, res.ctx.url, res.ctx.Depth+1)
+					c.enqueueUrls(ctxs)
+					c.pushPopRefCount--
+				} else {
+					c.logFunc(LogTrace, "should be enq'ing from a result, but we're too DEEEEP")
+				}
 			}
 
-		case enq := <-c.enqueue:
+		case enqResp := <-c.enqueue:
 			// Received a command to enqueue a URL, proceed
-			ctxs := c.toURLContexts(enq, nil)
-			c.logFunc(LogTrace, "receive url(s) to enqueue %v", ctxs)
-			c.enqueueUrls(ctxs)
+			if c.Options.MaxDepth > 0 && enqResp.depth+1 <= c.Options.MaxDepth {
+				ctxs := c.toURLContexts(enqResp.enq, nil, enqResp.depth+1)
+				c.logFunc(LogTrace, "received url(s) to enqueue %v", ctxs)
+				c.enqueueUrls(ctxs)
+			} else {
+				c.logFunc(LogTrace, "received url(s) to enqueue, but we're too DEEEEEEEEEP")
+			}
 		case <-c.stop:
 			return ErrInterrupted
 		}

@@ -23,6 +23,7 @@ type S map[string]interface{}
 type URLContext struct {
 	HeadBeforeGet bool
 	State         interface{}
+	Depth         int
 
 	// Internal fields, available through getters
 	url                 *url.URL
@@ -76,6 +77,7 @@ func (uc *URLContext) getRobotsURLCtx() (*URLContext, error) {
 	return &URLContext{
 		false, // Never request HEAD before GET for robots.txt
 		nil,   // Always nil state
+		0,     // always 0 depth
 		robURL,
 		robURL,       // Normalized is same as raw
 		uc.sourceURL, // Source and normalized source is same as for current context
@@ -83,13 +85,13 @@ func (uc *URLContext) getRobotsURLCtx() (*URLContext, error) {
 	}, nil
 }
 
-func (c *Crawler) toURLContexts(raw interface{}, src *url.URL) []*URLContext {
+func (c *Crawler) toURLContexts(raw interface{}, src *url.URL, depth int) []*URLContext {
 	var res []*URLContext
 
 	mapString := func(v S) {
 		res = make([]*URLContext, 0, len(v))
 		for s, st := range v {
-			ctx, err := c.stringToURLContext(s, src)
+			ctx, err := c.stringToURLContext(s, src, depth)
 			if err != nil {
 				c.Options.Extender.Error(newCrawlError(nil, err, CekParseURL))
 				c.logFunc(LogError, "ERROR parsing URL %s", s)
@@ -103,7 +105,7 @@ func (c *Crawler) toURLContexts(raw interface{}, src *url.URL) []*URLContext {
 	mapURL := func(v U) {
 		res = make([]*URLContext, 0, len(v))
 		for u, st := range v {
-			ctx := c.urlToURLContext(u, src)
+			ctx := c.urlToURLContext(u, src, depth)
 			ctx.State = st
 			res = append(res, ctx)
 		}
@@ -112,7 +114,7 @@ func (c *Crawler) toURLContexts(raw interface{}, src *url.URL) []*URLContext {
 	switch v := raw.(type) {
 	case string:
 		// Convert a single string URL to an URLContext
-		ctx, err := c.stringToURLContext(v, src)
+		ctx, err := c.stringToURLContext(v, src, depth)
 		if err != nil {
 			c.Options.Extender.Error(newCrawlError(nil, err, CekParseURL))
 			c.logFunc(LogError, "ERROR parsing URL %s", v)
@@ -124,7 +126,7 @@ func (c *Crawler) toURLContexts(raw interface{}, src *url.URL) []*URLContext {
 		// Convert all strings to URLContexts
 		res = make([]*URLContext, 0, len(v))
 		for _, s := range v {
-			ctx, err := c.stringToURLContext(s, src)
+			ctx, err := c.stringToURLContext(s, src, depth)
 			if err != nil {
 				c.Options.Extender.Error(newCrawlError(nil, err, CekParseURL))
 				c.logFunc(LogError, "ERROR parsing URL %s", s)
@@ -134,12 +136,12 @@ func (c *Crawler) toURLContexts(raw interface{}, src *url.URL) []*URLContext {
 		}
 
 	case *url.URL:
-		res = []*URLContext{c.urlToURLContext(v, src)}
+		res = []*URLContext{c.urlToURLContext(v, src, depth)}
 
 	case []*url.URL:
 		res = make([]*URLContext, 0, len(v))
 		for _, u := range v {
-			res = append(res, c.urlToURLContext(u, src))
+			res = append(res, c.urlToURLContext(u, src, depth))
 		}
 
 	case map[string]interface{}:
@@ -162,15 +164,15 @@ func (c *Crawler) toURLContexts(raw interface{}, src *url.URL) []*URLContext {
 	return res
 }
 
-func (c *Crawler) stringToURLContext(str string, src *url.URL) (*URLContext, error) {
+func (c *Crawler) stringToURLContext(str string, src *url.URL, depth int) (*URLContext, error) {
 	u, err := url.Parse(str)
 	if err != nil {
 		return nil, err
 	}
-	return c.urlToURLContext(u, src), nil
+	return c.urlToURLContext(u, src, depth), nil
 }
 
-func (c *Crawler) urlToURLContext(u, src *url.URL) *URLContext {
+func (c *Crawler) urlToURLContext(u, src *url.URL, depth int) *URLContext {
 	var rawSrc *url.URL
 
 	rawU := *u
@@ -184,6 +186,7 @@ func (c *Crawler) urlToURLContext(u, src *url.URL) *URLContext {
 	return &URLContext{
 		c.Options.HeadBeforeGet,
 		nil,
+		depth,
 		&rawU,
 		u,
 		rawSrc,

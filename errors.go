@@ -14,6 +14,9 @@ var (
 	// Options field MaxVisits, is reached.
 	ErrMaxVisits = errors.New("the maximum number of visits is reached")
 
+	// ErrMaxDepth is like ErrMaxVisits but it's depth not count based
+	ErrMaxDepth = errors.New("the maximum crawl depth has been reached")
+
 	// ErrInterrupted is returned when the crawler is manually stopped
 	// (via a call to Stop).
 	ErrInterrupted = errors.New("interrupted")

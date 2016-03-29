@@ -34,6 +34,10 @@ type Options struct {
 	// automatically stopping the crawler.
 	MaxVisits int
 
+	// MaxDepth is the maximum depth to crawl before automatically
+	// stopping the crawler
+	MaxDepth int
+
 	// EnqueueChanBuffer is the size of the buffer for the enqueue channel.
 	EnqueueChanBuffer int
 
@@ -86,6 +90,7 @@ func NewOptions(ext Extender) *Options {
 	return &Options{
 		DefaultUserAgent,
 		DefaultRobotUserAgent,
+		0,
 		0,
 		DefaultEnqueueChanBuffer,
 		DefaultHostBufferFactor,
