@@ -156,6 +156,7 @@ func (w *worker) requestRobotsTxt(ctx *URLContext) {
 		w.robotsGroup = w.getRobotsTxtGroup(ctx, robData, nil)
 
 	} else if res, ok := w.fetchURL(ctx, w.opts.UserAgent, false); ok {
+		w.logFunc("NOT OKAY!?!?!")
 		// Close the body on function end
 		defer res.Body.Close()
 		w.robotsGroup = w.getRobotsTxtGroup(ctx, nil, res)
@@ -165,10 +166,12 @@ func (w *worker) requestRobotsTxt(ctx *URLContext) {
 
 // Get the robots.txt group for this crawler.
 func (w *worker) getRobotsTxtGroup(ctx *URLContext, b []byte, res *http.Response) (g *robotstxt.Group) {
+	w.logFunc(LogInfo, "DERP DERP DERP TXT GRUPPE")
 	var data *robotstxt.RobotsData
 	var e error
 
 	if res != nil {
+		w.logFunc(LogInfo, "Res not nil")
 		var buf bytes.Buffer
 		io.Copy(&buf, res.Body)
 		res.Body = ioutil.NopCloser(bytes.NewReader(buf.Bytes()))
@@ -178,8 +181,10 @@ func (w *worker) getRobotsTxtGroup(ctx *URLContext, b []byte, res *http.Response
 		// Error or not, the robots.txt has been fetched, so notify
 		w.opts.Extender.FetchedRobots(ctx, res)
 	} else {
+		w.logFunc(LogInfo, "Res is nil")
 		data, e = robotstxt.FromBytes(b)
 	}
+	w.logFunc(LogInfo, "got robots")
 
 	// If robots data cannot be parsed, will return nil, which will allow access by default.
 	// Reasonable, since by default no robots.txt means full access, so invalid
