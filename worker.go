@@ -156,7 +156,7 @@ func (w *worker) requestRobotsTxt(ctx *URLContext) {
 		w.robotsGroup = w.getRobotsTxtGroup(ctx, robData, nil)
 
 	} else if res, ok := w.fetchURL(ctx, w.opts.UserAgent, false); ok {
-		w.logFunc("NOT OKAY!?!?!")
+		w.logFunc(LogInfo, "NOT OKAY!?!?!")
 		// Close the body on function end
 		defer res.Body.Close()
 		w.robotsGroup = w.getRobotsTxtGroup(ctx, nil, res)
