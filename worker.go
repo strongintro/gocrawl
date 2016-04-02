@@ -95,7 +95,7 @@ func (w *worker) run() {
 
 				// No need to check for idle timeout here, no idling while looping through
 				// a batch of URLs.
-				w.logFunc("about to select")
+				w.logFunc(LogInfo, "about to select")
 				select {
 				case <-w.stop:
 					w.logFunc(LogInfo, "stop signal received.")
