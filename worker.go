@@ -95,6 +95,7 @@ func (w *worker) run() {
 
 				// No need to check for idle timeout here, no idling while looping through
 				// a batch of URLs.
+				w.logFunc("about to select")
 				select {
 				case <-w.stop:
 					w.logFunc(LogInfo, "stop signal received.")
@@ -149,6 +150,7 @@ func (w *worker) requestURL(ctx *URLContext, headRequest bool) {
 // Process the robots.txt URL.
 func (w *worker) requestRobotsTxt(ctx *URLContext) {
 	// Ask if it should be fetched
+	w.logFunc(LogInfo, "requesting robots")
 	if robData, reqRob := w.opts.Extender.RequestRobots(ctx, w.opts.RobotUserAgent); !reqRob {
 		w.logFunc(LogInfo, "using robots.txt from cache")
 		w.robotsGroup = w.getRobotsTxtGroup(ctx, robData, nil)
@@ -158,6 +160,7 @@ func (w *worker) requestRobotsTxt(ctx *URLContext) {
 		defer res.Body.Close()
 		w.robotsGroup = w.getRobotsTxtGroup(ctx, nil, res)
 	}
+	w.logFunc(LogInfo, "robots done")
 }
 
 // Get the robots.txt group for this crawler.
@@ -228,7 +231,9 @@ func (w *worker) fetchURL(ctx *URLContext, agent string, headRequest bool) (res 
 		now := time.Now()
 
 		// Request the URL
+		w.logFunc(LogTrace, "About to fetch")
 		if res, e = w.opts.Extender.Fetch(ctx, agent, headRequest); e != nil {
+			w.logFunc(LogTrace, "Error fetching")
 			// Check if this is an ErrEnqueueRedirect, in which case we will enqueue
 			// the redirect-to URL.
 			if ue, y := e.(*url.Error); y {
@@ -349,7 +354,7 @@ func (w *worker) visitURL(ctx *URLContext, res *http.Response) interface{} {
 			w.opts.Extender.Error(newCrawlError(ctx, e, CekParseBody))
 			w.logFunc(LogError, "ERROR parsing %s: %s", ctx.url, e)
 		} else {
-			// w.logFunc(LogInfo, "BODY IS: %v", string(bd))
+			w.logFunc(LogInfo, "BODY IS: %v", string(bd))
 			doc = goquery.NewDocumentFromNode(node)
 			doc.Url = res.Request.URL
 		}
@@ -399,7 +404,6 @@ func (w *worker) processLinks(doc *goquery.Document) (result []*url.URL) {
 		return val
 	})
 	for _, s := range urls {
-		w.logFunc(LogInfo, "MAYBE HARVESTED URL IS: %v", s)
 		// If href starts with "#", then it points to this same exact URL, ignore (will fail to parse anyway)
 		if len(s) > 0 && !strings.HasPrefix(s, "#") {
 			if parsed, e := url.Parse(s); e == nil {
@@ -409,6 +413,9 @@ func (w *worker) processLinks(doc *goquery.Document) (result []*url.URL) {
 				w.logFunc(LogInfo, "ignore on unparsable policy %s: %s", s, e.Error())
 			}
 		}
+	}
+	for _, res := range result {
+		w.logFunc(LogInfo, "being returned: %v", res)
 	}
 	return
 }
