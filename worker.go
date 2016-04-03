@@ -174,6 +174,11 @@ func (w *worker) getRobotsTxtGroup(ctx *URLContext, b []byte, res *http.Response
 		w.logFunc(LogInfo, "Res not nil")
 		var buf bytes.Buffer
 		w.logFunc(LogInfo, "Copying")
+		data, e := ioutil.ReadAll(res.Body)
+		if e != nil {
+			log.Println("error reading data: ", e)
+		}
+		log.Println("data is: ", data)
 		io.Copy(&buf, res.Body)
 		w.logFunc(LogInfo, "NopCloser")
 		res.Body = ioutil.NopCloser(bytes.NewReader(buf.Bytes()))
