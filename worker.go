@@ -171,7 +171,7 @@ func (w *worker) getRobotsTxtGroup(ctx *URLContext, b []byte, res *http.Response
 	var e error
 
 	if res != nil {
-		w.logFunc(LogInfo, "Res not nil")
+		w.logFunc(LogInfo, "Res not nil: ", res)
 		var buf bytes.Buffer
 		w.logFunc(LogInfo, "Copying")
 		derp, e := ioutil.ReadAll(res.Body)
