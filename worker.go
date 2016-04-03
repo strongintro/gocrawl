@@ -156,7 +156,7 @@ func (w *worker) requestRobotsTxt(ctx *URLContext) {
 		w.robotsGroup = w.getRobotsTxtGroup(ctx, robData, nil)
 
 	} else if res, ok := w.fetchURL(ctx, w.opts.UserAgent, false); ok {
-		w.logFunc(LogInfo, "NOT OKAY!?!?!")
+		w.logFunc(LogInfo, "it's okay")
 		// Close the body on function end
 		defer res.Body.Close()
 		w.robotsGroup = w.getRobotsTxtGroup(ctx, nil, res)
@@ -173,9 +173,13 @@ func (w *worker) getRobotsTxtGroup(ctx *URLContext, b []byte, res *http.Response
 	if res != nil {
 		w.logFunc(LogInfo, "Res not nil")
 		var buf bytes.Buffer
+		w.logFunc(LogInfo, "Copying")
 		io.Copy(&buf, res.Body)
+		w.logFunc(LogInfo, "NopCloser")
 		res.Body = ioutil.NopCloser(bytes.NewReader(buf.Bytes()))
+		w.logFunc(LogInfo, "FromResponse")
 		data, e = robotstxt.FromResponse(res)
+		w.logFunc(LogInfo, "NopCLoser2")
 		// Rewind the res.Body (by re-creating it from the bytes)
 		res.Body = ioutil.NopCloser(bytes.NewReader(buf.Bytes()))
 		// Error or not, the robots.txt has been fetched, so notify
