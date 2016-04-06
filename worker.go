@@ -171,10 +171,6 @@ func (w *worker) getRobotsTxtGroup(ctx *URLContext, b []byte, res *http.Response
 
 	if res != nil {
 		var buf bytes.Buffer
-		derp, e := ioutil.ReadAll(res.Body)
-		if e != nil {
-			w.logFunc(LogInfo, "error reading data: ", e)
-		}
 		io.Copy(&buf, res.Body)
 		res.Body = ioutil.NopCloser(bytes.NewReader(buf.Bytes()))
 		data, e = robotstxt.FromResponse(res)
