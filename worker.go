@@ -368,7 +368,6 @@ func (w *worker) visitURL(ctx *URLContext, res *http.Response) interface{} {
 			w.opts.Extender.Error(newCrawlError(ctx, e, CekParseBody))
 			w.logFunc(LogError, "ERROR parsing %s: %s", ctx.url, e)
 		} else {
-			w.logFunc(LogInfo, "BODY IS: %v", string(bd))
 			doc = goquery.NewDocumentFromNode(node)
 			doc.Url = res.Request.URL
 		}
